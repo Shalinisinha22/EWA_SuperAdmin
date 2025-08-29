@@ -1,31 +1,42 @@
 import React, { useState } from 'react';
 import Sidebar from './components/Sidebar';
-import Dashboard from './components/Dashboard';
-import AdminManagement from './components/AdminManagement';
-import SalesOverview from './components/SalesOverview';
-import OrdersManagement from './components/OrdersManagement';
+import GlobalOverview from './components/GlobalOverview';
+import StoreManagement from './components/StoreManagement';
+import StoreAnalytics from './components/StoreAnalytics';
+import { Store } from './types/store';
 
 function App() {
-  const [activeSection, setActiveSection] = useState('dashboard');
+  const [activeSection, setActiveSection] = useState('overview');
+  const [selectedStore, setSelectedStore] = useState<Store | null>(null);
 
   const renderActiveSection = () => {
+    if (selectedStore) {
+      return (
+        <StoreAnalytics 
+          store={selectedStore} 
+          onBack={() => setSelectedStore(null)} 
+        />
+      );
+    }
+
     switch (activeSection) {
-      case 'dashboard':
-        return <Dashboard />;
-      case 'admins':
-        return <AdminManagement />;
-      case 'sales':
-        return <SalesOverview />;
-      case 'orders':
-        return <OrdersManagement />;
+      case 'overview':
+        return <GlobalOverview />;
+      case 'stores':
+        return <StoreManagement onViewStore={setSelectedStore} />;
       default:
-        return <Dashboard />;
+        return <GlobalOverview />;
     }
   };
 
   return (
     <div className="flex min-h-screen bg-gray-50">
-      <Sidebar activeSection={activeSection} setActiveSection={setActiveSection} />
+      <Sidebar 
+        activeSection={activeSection} 
+        setActiveSection={setActiveSection}
+        selectedStore={selectedStore}
+        onBackToStores={() => setSelectedStore(null)}
+      />
       <main className="flex-1 p-6 ml-64">
         {renderActiveSection()}
       </main>
