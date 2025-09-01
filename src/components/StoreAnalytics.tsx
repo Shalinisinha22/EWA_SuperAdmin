@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   ArrowLeft,
   DollarSign,
@@ -15,52 +15,115 @@ import {
   Globe,
   Mail,
   RotateCcw,
-  Power
+  Power,
+  AlertCircle,
+  Edit
 } from 'lucide-react';
-import { Store } from '../types/store';
+import { Store as StoreType } from '../types/store';
+import { storeAnalyticsAPI, StoreAnalytics as APIStoreAnalytics } from '../services/storeAnalyticsAPI';
+import { useAuth } from '../context/AuthContext';
 
 interface StoreAnalyticsProps {
-  store: Store;
+  store: StoreType;
   onBack: () => void;
 }
 
 const StoreAnalytics: React.FC<StoreAnalyticsProps> = ({ store, onBack }) => {
+  const { user } = useAuth();
   const [timeRange, setTimeRange] = useState('30d');
+  const [analytics, setAnalytics] = useState<APIStoreAnalytics | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingStore, setEditingStore] = useState({
+    name: store.name,
+    subdomain: store.subdomain,
+    adminName: store.adminName,
+    adminEmail: store.adminEmail,
+    commissionRate: analytics?.analytics.commission.rate || 8.0
+  });
 
-  const statsConfig = [
+  // Load analytics data
+  const loadAnalytics = async () => {
+    if (!user?.token) return;
+    
+    try {
+      setLoading(true);
+      setError('');
+      const data = await storeAnalyticsAPI.getStoreOverview(user.token, store.id, timeRange);
+      setAnalytics(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load analytics');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Load analytics on component mount and when time range changes
+  useEffect(() => {
+    loadAnalytics();
+  }, [user?.token, store.id, timeRange]);
+
+  // Update editing store when analytics load
+  useEffect(() => {
+    if (analytics) {
+      setEditingStore({
+        name: store.name,
+        subdomain: store.subdomain,
+        adminName: store.adminName,
+        adminEmail: store.adminEmail,
+        commissionRate: analytics.analytics.commission.rate
+      });
+    }
+  }, [analytics, store]);
+
+  const handleEditStore = async () => {
+    if (!user?.token) return;
+    
+    try {
+      // Here you would call the API to update the store
+      // For now, we'll just close the modal
+      setShowEditModal(false);
+      // You can add a success message or reload data here
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update store');
+    }
+  };
+
+  const statsConfig = analytics ? [
     {
       title: 'Total Revenue',
-      value: `$${store.revenue.total.toLocaleString()}`,
-      change: '+12.5%',
+      value: `₹${analytics.analytics.revenue.total.toLocaleString()}`,
+      change: analytics.analytics.revenue.growth,
       trend: 'up',
       icon: DollarSign,
       color: 'bg-emerald-500'
     },
     {
-      title: 'Monthly Revenue',
-      value: `$${store.revenue.monthly.toLocaleString()}`,
-      change: '+8.3%',
+      title: 'Period Revenue',
+      value: `₹${analytics.analytics.revenue.period.toLocaleString()}`,
+      change: analytics.analytics.revenue.growth,
       trend: 'up',
       icon: TrendingUp,
       color: 'bg-blue-500'
     },
     {
       title: 'Total Orders',
-      value: store.salesVolume.orders.toString(),
-      change: '+15.7%',
+      value: analytics.analytics.orders.total.toString(),
+      change: analytics.analytics.orders.growth,
       trend: 'up',
       icon: ShoppingCart,
       color: 'bg-purple-500'
     },
     {
       title: 'Average Order Value',
-      value: `$${store.salesVolume.aov.toFixed(2)}`,
+      value: `₹${analytics.analytics.orders.averageValue.toFixed(2)}`,
       change: '+4.2%',
       trend: 'up',
       icon: Users,
       color: 'bg-amber-500'
     }
-  ];
+  ] : [];
 
   const revenueData = [
     { month: 'Jan', revenue: 12400, commission: 1054 },
@@ -88,6 +151,47 @@ const StoreAnalytics: React.FC<StoreAnalyticsProps> = ({ store, onBack }) => {
       default: return Activity;
     }
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="flex items-center space-x-2">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+          <span className="text-gray-600">Loading store analytics...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="text-red-600 text-6xl mb-4">⚠️</div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Error Loading Analytics</h1>
+          <p className="text-gray-600 mb-4">{error}</p>
+          <button
+            onClick={loadAnalytics}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!analytics) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="text-gray-600 text-6xl mb-4">📊</div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">No Analytics Data</h1>
+          <p className="text-gray-600">Unable to load store analytics data.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -140,14 +244,18 @@ const StoreAnalytics: React.FC<StoreAnalyticsProps> = ({ store, onBack }) => {
               </div>
             </div>
           </div>
-          <div className="flex space-x-2">
-            <button className="p-2 rounded-lg border border-amber-200 text-amber-600 hover:bg-amber-50 transition-colors">
-              <RotateCcw className="w-4 h-4" />
-            </button>
-            <button className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors">
-              <Power className="w-4 h-4 text-gray-600" />
-            </button>
-          </div>
+                     <div className="flex space-x-2">
+             <button 
+               onClick={() => setShowEditModal(true)}
+               className="p-2 rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 transition-colors"
+               title="Edit Store"
+             >
+               <Edit className="w-4 h-4" />
+             </button>
+             <button className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors">
+               <Power className="w-4 h-4 text-gray-600" />
+             </button>
+           </div>
         </div>
       </div>
 
@@ -244,24 +352,23 @@ const StoreAnalytics: React.FC<StoreAnalyticsProps> = ({ store, onBack }) => {
               </div>
               <div>
                 <p className="text-sm text-gray-600">Commission Rate</p>
-                <p className="font-medium text-gray-900">{store.commission.rate}%</p>
+                <p className="font-medium text-gray-900">{analytics.analytics.commission.rate}%</p>
               </div>
               <div>
-                <p className="text-sm text-gray-600">Total Products</p>
-                <p className="font-medium text-gray-900">{store.salesVolume.products}</p>
+                <p className="text-sm text-gray-900">{analytics.analytics.products.total}</p>
               </div>
             </div>
             
-            <div className="pt-4 border-t border-gray-200">
-              <div className="bg-emerald-50 rounded-lg p-4">
-                <div className="flex justify-between items-center">
-                  <span className="text-emerald-700 font-medium">Total Commission Earned</span>
-                  <span className="text-2xl font-bold text-emerald-800">
-                    ${store.commission.earned.toLocaleString()}
-                  </span>
-                </div>
-              </div>
-            </div>
+                         <div className="pt-4 border-t border-gray-200">
+               <div className="bg-emerald-50 rounded-lg p-4">
+                 <div className="flex justify-between items-center">
+                   <span className="text-emerald-700 font-medium">Total Commission Earned</span>
+                   <span className="text-2xl font-bold text-emerald-800">
+                     ₹{analytics.analytics.commission.total.toLocaleString()}
+                   </span>
+                 </div>
+               </div>
+             </div>
           </div>
         </div>
 
@@ -310,23 +417,42 @@ const StoreAnalytics: React.FC<StoreAnalyticsProps> = ({ store, onBack }) => {
             <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
               <ShoppingCart className="w-8 h-8 text-blue-600" />
             </div>
-            <p className="text-2xl font-bold text-gray-900">{store.salesVolume.orders}</p>
+            <p className="text-2xl font-bold text-gray-900">{analytics.analytics.orders.total}</p>
             <p className="text-sm text-gray-600">Total Orders</p>
           </div>
           <div className="text-center">
             <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-3">
               <DollarSign className="w-8 h-8 text-emerald-600" />
             </div>
-            <p className="text-2xl font-bold text-gray-900">${store.salesVolume.aov.toFixed(0)}</p>
+            <p className="text-2xl font-bold text-gray-900">₹{analytics.analytics.orders.averageValue.toFixed(0)}</p>
             <p className="text-sm text-gray-600">Average Order Value</p>
           </div>
           <div className="text-center">
             <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-3">
               <TrendingUp className="w-8 h-8 text-purple-600" />
             </div>
-            <p className="text-2xl font-bold text-gray-900">${store.commission.earned.toLocaleString()}</p>
+            <p className="text-2xl font-bold text-gray-900">₹{analytics.analytics.commission.total.toLocaleString()}</p>
             <p className="text-sm text-gray-600">Commission Earned</p>
           </div>
+        </div>
+      </div>
+
+      {/* Customers Section */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-lg font-semibold text-gray-900">Store Customers</h2>
+          <div className="text-sm text-gray-600">
+            Total: {analytics.analytics.customers.total} customers
+          </div>
+        </div>
+        <div className="bg-blue-50 rounded-lg p-4 text-center">
+          <Users className="w-12 h-12 text-blue-600 mx-auto mb-2" />
+          <p className="text-lg font-semibold text-blue-900">
+            {analytics.analytics.customers.total} Customers
+          </p>
+          <p className="text-sm text-blue-600">
+            Growth: {analytics.analytics.customers.growth}
+          </p>
         </div>
       </div>
 
@@ -338,10 +464,13 @@ const StoreAnalytics: React.FC<StoreAnalyticsProps> = ({ store, onBack }) => {
             <Globe className="w-5 h-5 text-blue-600" />
             <span className="text-sm font-medium text-gray-900">Visit Store</span>
           </button>
-          <button className="flex items-center space-x-3 p-4 rounded-lg border border-gray-200 hover:border-amber-300 hover:bg-amber-50 transition-colors">
-            <RotateCcw className="w-5 h-5 text-amber-600" />
-            <span className="text-sm font-medium text-gray-900">Reset Admin Login</span>
-          </button>
+                     <button 
+             onClick={() => setShowEditModal(true)}
+             className="flex items-center space-x-3 p-4 rounded-lg border border-blue-300 hover:border-blue-400 hover:bg-blue-50 transition-colors"
+           >
+             <Edit className="w-5 h-5 text-blue-600" />
+             <span className="text-sm font-medium text-gray-900">Edit Store</span>
+           </button>
           <button className="flex items-center space-x-3 p-4 rounded-lg border border-gray-200 hover:border-purple-300 hover:bg-purple-50 transition-colors">
             <Power className="w-5 h-5 text-purple-600" />
             <span className="text-sm font-medium text-gray-900">Toggle Status</span>
@@ -351,10 +480,92 @@ const StoreAnalytics: React.FC<StoreAnalyticsProps> = ({ store, onBack }) => {
             <span className="text-sm font-medium text-gray-900">Process Commission</span>
           </button>
         </div>
-      </div>
-    </div>
-  );
-};
+             </div>
+
+       {/* Edit Store Modal */}
+       {showEditModal && (
+         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+           <div className="bg-white rounded-xl p-6 w-full max-w-md">
+             <h2 className="text-xl font-semibold text-gray-900 mb-4">Edit Store</h2>
+             <div className="space-y-4">
+               <div>
+                 <label className="block text-sm font-medium text-gray-700 mb-1">Store Name</label>
+                 <input
+                   type="text"
+                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                   value={editingStore.name}
+                   onChange={(e) => setEditingStore({ ...editingStore, name: e.target.value })}
+                   placeholder="e.g., Ewa Luxe"
+                 />
+               </div>
+               <div>
+                 <label className="block text-sm font-medium text-gray-700 mb-1">Subdomain</label>
+                 <div className="flex">
+                   <input
+                     type="text"
+                     className="flex-1 px-3 py-2 border border-gray-300 rounded-l-lg focus:ring-2 focus:ring-blue-500"
+                     value={editingStore.subdomain}
+                     onChange={(e) => setEditingStore({ ...editingStore, subdomain: e.target.value.toLowerCase().replace(/[^a-z0-9]/g, '') })}
+                     placeholder="ewaluxe"
+                   />
+                   <span className="px-3 py-2 bg-gray-100 border border-l-0 border-gray-300 rounded-r-lg text-sm text-gray-600">
+                     .store.com
+                   </span>
+                 </div>
+               </div>
+               <div>
+                 <label className="block text-sm font-medium text-gray-700 mb-1">Admin Name</label>
+                 <input
+                   type="text"
+                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                   value={editingStore.adminName}
+                   onChange={(e) => setEditingStore({ ...editingStore, adminName: e.target.value })}
+                   placeholder="Ewa Admin"
+                 />
+               </div>
+               <div>
+                 <label className="block text-sm font-medium text-gray-700 mb-1">Admin Email</label>
+                 <input
+                   type="email"
+                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                   value={editingStore.adminEmail}
+                   onChange={(e) => setEditingStore({ ...editingStore, adminEmail: e.target.value })}
+                   placeholder="ewa@admin.com"
+                 />
+               </div>
+               <div>
+                 <label className="block text-sm font-medium text-gray-700 mb-1">Commission Rate (%)</label>
+                 <input
+                   type="number"
+                   step="0.1"
+                   min="0"
+                   max="100"
+                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                   value={editingStore.commissionRate}
+                   onChange={(e) => setEditingStore({ ...editingStore, commissionRate: parseFloat(e.target.value) })}
+                 />
+               </div>
+             </div>
+             <div className="flex space-x-3 mt-6">
+               <button
+                 onClick={() => setShowEditModal(false)}
+                 className="flex-1 py-2 px-4 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+               >
+                 Cancel
+               </button>
+               <button
+                 onClick={handleEditStore}
+                 className="flex-1 py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+               >
+                 Update Store
+               </button>
+             </div>
+           </div>
+         </div>
+       )}
+     </div>
+   );
+ };
 
 const getSeverityColor = (severity: string) => {
   switch (severity) {

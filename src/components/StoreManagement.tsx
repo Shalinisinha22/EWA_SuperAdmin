@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Plus, 
   Search, 
@@ -14,23 +14,28 @@ import {
   Clock,
   RotateCcw,
   Eye,
-  Power
+  Power,
+  AlertCircle
 } from 'lucide-react';
 import { Store as StoreType } from '../types/store';
-import { mockStores } from '../data/mockStores';
+import { storeAPI, Store as APIStore, CreateStoreData } from '../services/storeAPI';
+import { useAuth } from '../context/AuthContext';
 
 interface StoreManagementProps {
   onViewStore: (store: StoreType) => void;
 }
 
 const StoreManagement: React.FC<StoreManagementProps> = ({ onViewStore }) => {
+  const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedStore, setSelectedStore] = useState<StoreType | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const [stores, setStores] = useState<StoreType[]>(mockStores);
+  const [stores, setStores] = useState<StoreType[]>([]);
 
   const [newStore, setNewStore] = useState({
     name: '',
@@ -41,10 +46,54 @@ const StoreManagement: React.FC<StoreManagementProps> = ({ onViewStore }) => {
   });
 
   const statusConfig = {
-    live: { color: 'bg-emerald-100 text-emerald-800', icon: CheckCircle },
+    active: { color: 'bg-emerald-100 text-emerald-800', icon: CheckCircle },
     pending: { color: 'bg-amber-100 text-amber-800', icon: Clock },
     disabled: { color: 'bg-red-100 text-red-800', icon: XCircle }
   };
+
+  // Load stores from API
+  const loadStores = async () => {
+    if (!user?.token) return;
+    
+    try {
+      setLoading(true);
+      setError('');
+      const response = await storeAPI.getAllStores(
+        user.token,
+        1,
+        50, // Load more stores for better UX
+        searchTerm,
+        statusFilter
+      );
+      
+      // Convert API stores to component format
+      const convertedStores: StoreType[] = response.stores.map(store => ({
+        id: store._id,
+        name: store.name,
+        subdomain: store.slug,
+        adminName: 'Store Admin', // Will be updated when we get admin details
+        adminEmail: 'admin@store.com', // Will be updated when we get admin details
+        status: store.status,
+        revenue: { total: 0, monthly: 0, weekly: 0 }, // Mock data for now
+        salesVolume: { orders: 0, aov: 0, products: 0 }, // Mock data for now
+        commission: { rate: store.settings.commissionRate, earned: 0 }, // Mock data for now
+        createdDate: new Date(store.createdAt).toISOString().split('T')[0],
+        lastLogin: 'Never', // Mock data for now
+        activityLogs: []
+      }));
+      
+      setStores(convertedStores);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load stores');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Load stores on component mount and when filters change
+  useEffect(() => {
+    loadStores();
+  }, [user?.token, searchTerm, statusFilter]);
 
   const filteredStores = stores.filter(store => {
     const matchesSearch = store.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -54,55 +103,85 @@ const StoreManagement: React.FC<StoreManagementProps> = ({ onViewStore }) => {
     return matchesSearch && matchesStatus;
   });
 
-  const handleAddStore = () => {
-    const id = (stores.length + 1).toString();
-    const store: StoreType = {
-      id,
-      name: newStore.name,
-      subdomain: newStore.subdomain,
-      adminName: newStore.adminName,
-      adminEmail: newStore.adminEmail,
-      status: 'pending',
-      revenue: { total: 0, monthly: 0, weekly: 0 },
-      salesVolume: { orders: 0, aov: 0, products: 0 },
-      commission: { rate: newStore.commissionRate, earned: 0 },
-      createdDate: new Date().toISOString().split('T')[0],
-      lastLogin: 'Never',
-      activityLogs: []
-    };
-    setStores([...stores, store]);
-    setNewStore({ name: '', subdomain: '', adminName: '', adminEmail: '', commissionRate: 8.0 });
-    setShowAddModal(false);
-  };
+  const handleAddStore = async () => {
+    if (!user?.token) return;
+    
+    try {
+      const storeData: CreateStoreData = {
+        name: newStore.name,
+        subdomain: newStore.subdomain,
+        adminName: newStore.adminName,
+        adminEmail: newStore.adminEmail,
+        commissionRate: newStore.commissionRate
+      };
 
-  const handleDeleteStore = () => {
-    if (selectedStore) {
-      setStores(stores.filter(store => store.id !== selectedStore.id));
-      setShowDeleteModal(false);
-      setSelectedStore(null);
+      await storeAPI.createStore(user.token, storeData);
+      
+      // Reset form and reload stores
+      setNewStore({ name: '', subdomain: '', adminName: '', adminEmail: '', commissionRate: 8.0 });
+      setShowAddModal(false);
+      loadStores(); // Reload the stores list
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create store');
     }
   };
 
-  const toggleStoreStatus = (id: string) => {
-    setStores(stores.map(store => {
-      if (store.id === id) {
-        let newStatus: StoreType['status'];
-        if (store.status === 'live') newStatus = 'disabled';
-        else if (store.status === 'disabled') newStatus = 'pending';
-        else newStatus = 'live';
-        return { ...store, status: newStatus };
-      }
-      return store;
-    }));
+  const handleDeleteStore = async () => {
+    if (!selectedStore || !user?.token) return;
+    
+    try {
+      await storeAPI.deleteStore(user.token, selectedStore.id);
+      setShowDeleteModal(false);
+      setSelectedStore(null);
+      loadStores(); // Reload the stores list
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete store');
+    }
   };
 
-  const resetStoreAdmin = (id: string) => {
-    // In real app, this would trigger password reset email
-    alert('Password reset email sent to store admin');
+  const toggleStoreStatus = async (id: string) => {
+    if (!user?.token) return;
+    
+    try {
+      const store = stores.find(s => s.id === id);
+      if (!store) return;
+
+      let newStatus: 'active' | 'pending' | 'disabled';
+      if (store.status === 'active') newStatus = 'disabled';
+      else if (store.status === 'disabled') newStatus = 'pending';
+      else newStatus = 'active';
+
+      await storeAPI.updateStoreStatus(user.token, id, newStatus);
+      loadStores(); // Reload the stores list
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update store status');
+    }
+  };
+
+  const resetStoreAdmin = async (id: string) => {
+    if (!user?.token) return;
+    
+    try {
+      const store = stores.find(s => s.id === id);
+      if (!store) return;
+
+      const response = await storeAPI.resetAdminPassword(user.token, id, store.adminEmail);
+      alert(`Password reset successfully. New password: ₹{response.newPassword}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to reset password');
+    }
   };
 
   return (
     <div className="space-y-6">
+      {/* Error Display */}
+      {error && (
+        <div className="flex items-center p-4 text-sm text-red-800 border border-red-200 rounded-lg bg-red-50">
+          <AlertCircle className="w-4 h-4 mr-2" />
+          {error}
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
@@ -137,7 +216,7 @@ const StoreManagement: React.FC<StoreManagementProps> = ({ onViewStore }) => {
             className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
           >
             <option value="all">All Statuses</option>
-            <option value="live">Live</option>
+            <option value="active">Active</option>
             <option value="pending">Pending</option>
             <option value="disabled">Disabled</option>
           </select>
@@ -145,8 +224,16 @@ const StoreManagement: React.FC<StoreManagementProps> = ({ onViewStore }) => {
       </div>
 
       {/* Store Cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-        {filteredStores.map((store) => {
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <div className="flex items-center space-x-2">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            <span className="text-gray-600">Loading stores...</span>
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+          {filteredStores.map((store) => {
           const StatusIcon = statusConfig[store.status].icon;
           
           return (
@@ -162,7 +249,7 @@ const StoreManagement: React.FC<StoreManagementProps> = ({ onViewStore }) => {
                       <p className="text-sm text-gray-600">{store.subdomain}.store.com</p>
                     </div>
                   </div>
-                  <span className={`inline-flex items-center space-x-1 px-2 py-1 rounded-full text-xs font-medium ${statusConfig[store.status].color}`}>
+                  <span className={`inline-flex items-center space-x-1 px-2 py-1 rounded-full text-xs font-medium ₹{statusConfig[store.status].color}`}>
                     <StatusIcon className="w-3 h-3" />
                     <span className="capitalize">{store.status}</span>
                   </span>
@@ -186,11 +273,11 @@ const StoreManagement: React.FC<StoreManagementProps> = ({ onViewStore }) => {
                 <div className="mt-4 grid grid-cols-2 gap-4">
                   <div className="bg-gray-50 rounded-lg p-3">
                     <p className="text-xs text-gray-600">Revenue</p>
-                    <p className="font-semibold text-gray-900">${store.revenue.total.toLocaleString()}</p>
+                    <p className="font-semibold text-gray-900">₹{store.revenue.total.toLocaleString()}</p>
                   </div>
                   <div className="bg-gray-50 rounded-lg p-3">
                     <p className="text-xs text-gray-600">Commission</p>
-                    <p className="font-semibold text-gray-900">${store.commission.earned.toLocaleString()}</p>
+                    <p className="font-semibold text-gray-900">₹{store.commission.earned.toLocaleString()}</p>
                   </div>
                 </div>
 
@@ -233,7 +320,8 @@ const StoreManagement: React.FC<StoreManagementProps> = ({ onViewStore }) => {
             </div>
           );
         })}
-      </div>
+        </div>
+      )}
 
       {/* Add Store Modal */}
       {showAddModal && (

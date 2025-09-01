@@ -9,6 +9,7 @@ import {
   LogOut 
 } from 'lucide-react';
 import { Store as StoreType } from '../types/store';
+import { useAuth } from '../context/AuthContext';
 
 interface SidebarProps {
   activeSection: string;
@@ -23,6 +24,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   selectedStore, 
   onBackToStores 
 }) => {
+  const { logout, user } = useAuth();
   const menuItems = [
     { id: 'overview', label: 'Global Overview', icon: BarChart3 },
     { id: 'stores', label: 'Store Management', icon: Store },
@@ -86,11 +88,18 @@ const Sidebar: React.FC<SidebarProps> = ({
       )}
 
       <div className="absolute bottom-0 left-0 right-0 p-6 border-t border-gray-200">
+        <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+          <p className="text-sm font-medium text-gray-900">{user?.name}</p>
+          <p className="text-xs text-gray-500">{user?.email}</p>
+        </div>
         <button className="flex items-center space-x-3 text-gray-700 hover:text-gray-900 transition-colors">
           <Settings className="w-5 h-5" />
           <span className="font-medium">Settings</span>
         </button>
-        <button className="flex items-center space-x-3 text-gray-700 hover:text-red-600 transition-colors mt-3">
+        <button 
+          onClick={logout}
+          className="flex items-center space-x-3 text-gray-700 hover:text-red-600 transition-colors mt-3"
+        >
           <LogOut className="w-5 h-5" />
           <span className="font-medium">Logout</span>
         </button>

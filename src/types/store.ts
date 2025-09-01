@@ -4,7 +4,7 @@ export interface Store {
   subdomain: string;
   adminName: string;
   adminEmail: string;
-  status: 'live' | 'pending' | 'disabled';
+  status: 'active' | 'pending' | 'disabled';
   revenue: {
     total: number;
     monthly: number;
