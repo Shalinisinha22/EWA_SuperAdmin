@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { Store as StoreType } from '../types/store';
 import { storeAnalyticsAPI, StoreAnalytics as APIStoreAnalytics } from '../services/storeAnalyticsAPI';
+import { storeAPI } from '../services/storeAPI';
 import { useAuth } from '../context/AuthContext';
 
 interface StoreAnalyticsProps {
@@ -81,12 +82,22 @@ const StoreAnalytics: React.FC<StoreAnalyticsProps> = ({ store, onBack }) => {
     if (!user?.token) return;
     
     try {
-      // Here you would call the API to update the store
-      // For now, we'll just close the modal
+      setLoading(true);
+      await storeAPI.updateStore(user.token, store.id, {
+        name: editingStore.name,
+        slug: editingStore.subdomain,
+        adminName: editingStore.adminName,
+        adminEmail: editingStore.adminEmail,
+        commissionRate: editingStore.commissionRate
+      });
+      
       setShowEditModal(false);
-      // You can add a success message or reload data here
+      // Reload analytics to get updated data
+      await loadAnalytics();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update store');
+    } finally {
+      setLoading(false);
     }
   };
 

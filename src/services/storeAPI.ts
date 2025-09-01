@@ -33,6 +33,14 @@ export interface CreateStoreData {
   commissionRate?: number;
 }
 
+export interface UpdateStoreData {
+  name?: string;
+  slug?: string;
+  adminName?: string;
+  adminEmail?: string;
+  commissionRate?: number;
+}
+
 export interface StoreListResponse {
   stores: Store[];
   page: number;
@@ -77,6 +85,18 @@ export const storeAPI = {
     admin: StoreAdmin;
   }> => {
     return apiClient.post('/stores', storeData, token);
+  },
+
+  // Update store details
+  updateStore: async (
+    token: string,
+    storeId: string,
+    storeData: UpdateStoreData
+  ): Promise<{
+    message: string;
+    store: Store;
+  }> => {
+    return apiClient.put(`/stores/${storeId}`, storeData, token);
   },
 
   // Update store status

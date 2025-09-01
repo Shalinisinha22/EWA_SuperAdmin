@@ -15,10 +15,15 @@ import {
   RotateCcw,
   Eye,
   Power,
-  AlertCircle
+  AlertCircle,
+  ShoppingCart,
+  DollarSign,
+  TrendingUp,
+  Users
 } from 'lucide-react';
 import { Store as StoreType } from '../types/store';
 import { storeAPI, Store as APIStore, CreateStoreData } from '../services/storeAPI';
+import { storeAnalyticsAPI } from '../services/storeAnalyticsAPI';
 import { useAuth } from '../context/AuthContext';
 
 interface StoreManagementProps {
@@ -32,10 +37,13 @@ const StoreManagement: React.FC<StoreManagementProps> = ({ onViewStore }) => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedStore, setSelectedStore] = useState<StoreType | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingStore, setEditingStore] = useState<StoreType | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   const [stores, setStores] = useState<StoreType[]>([]);
+  const [storeAnalytics, setStoreAnalytics] = useState<{[key: string]: any}>({});
 
   const [newStore, setNewStore] = useState({
     name: '',
@@ -90,10 +98,60 @@ const StoreManagement: React.FC<StoreManagementProps> = ({ onViewStore }) => {
     }
   };
 
+  // Load analytics data for a specific store
+  const loadStoreAnalytics = async (storeId: string) => {
+    if (!user?.token) return;
+    
+    try {
+      const analytics = await storeAnalyticsAPI.getStoreOverview(user.token, storeId, '30d');
+      setStoreAnalytics(prev => ({
+        ...prev,
+        [storeId]: analytics
+      }));
+    } catch (err) {
+      console.error(`Failed to load analytics for store ${storeId}:`, err);
+    }
+  };
+
+  // Load analytics for all stores
+  const loadAllStoreAnalytics = async () => {
+    if (!user?.token || stores.length === 0) return;
+    
+    try {
+      const analyticsPromises = stores.map(store => 
+        storeAnalyticsAPI.getStoreOverview(user.token, store.id, '30d')
+          .catch(err => {
+            console.error(`Failed to load analytics for store ${store.id}:`, err);
+            return null;
+          })
+      );
+      
+      const analyticsResults = await Promise.all(analyticsPromises);
+      
+      const analyticsMap: {[key: string]: any} = {};
+      stores.forEach((store, index) => {
+        if (analyticsResults[index]) {
+          analyticsMap[store.id] = analyticsResults[index];
+        }
+      });
+      
+      setStoreAnalytics(analyticsMap);
+    } catch (err) {
+      console.error('Failed to load store analytics:', err);
+    }
+  };
+
   // Load stores on component mount and when filters change
   useEffect(() => {
     loadStores();
   }, [user?.token, searchTerm, statusFilter]);
+
+  // Load analytics when stores are loaded
+  useEffect(() => {
+    if (stores.length > 0) {
+      loadAllStoreAnalytics();
+    }
+  }, [stores, user?.token]);
 
   const filteredStores = stores.filter(store => {
     const matchesSearch = store.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -108,18 +166,18 @@ const StoreManagement: React.FC<StoreManagementProps> = ({ onViewStore }) => {
     
     try {
       const storeData: CreateStoreData = {
-        name: newStore.name,
-        subdomain: newStore.subdomain,
-        adminName: newStore.adminName,
-        adminEmail: newStore.adminEmail,
+      name: newStore.name,
+      subdomain: newStore.subdomain,
+      adminName: newStore.adminName,
+      adminEmail: newStore.adminEmail,
         commissionRate: newStore.commissionRate
       };
 
       await storeAPI.createStore(user.token, storeData);
       
       // Reset form and reload stores
-      setNewStore({ name: '', subdomain: '', adminName: '', adminEmail: '', commissionRate: 8.0 });
-      setShowAddModal(false);
+    setNewStore({ name: '', subdomain: '', adminName: '', adminEmail: '', commissionRate: 8.0 });
+    setShowAddModal(false);
       loadStores(); // Reload the stores list
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create store');
@@ -148,7 +206,7 @@ const StoreManagement: React.FC<StoreManagementProps> = ({ onViewStore }) => {
 
       let newStatus: 'active' | 'pending' | 'disabled';
       if (store.status === 'active') newStatus = 'disabled';
-      else if (store.status === 'disabled') newStatus = 'pending';
+        else if (store.status === 'disabled') newStatus = 'pending';
       else newStatus = 'active';
 
       await storeAPI.updateStoreStatus(user.token, id, newStatus);
@@ -169,6 +227,31 @@ const StoreManagement: React.FC<StoreManagementProps> = ({ onViewStore }) => {
       alert(`Password reset successfully. New password: ₹{response.newPassword}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to reset password');
+    }
+  };
+
+  const handleEditStore = async () => {
+    if (!user?.token || !editingStore) return;
+    
+    try {
+      setLoading(true);
+      await storeAPI.updateStore(user.token, editingStore.id, {
+        name: editingStore.name,
+        slug: editingStore.subdomain,
+        adminName: editingStore.adminName,
+        adminEmail: editingStore.adminEmail,
+        commissionRate: editingStore.commission.rate
+      });
+      
+      setShowEditModal(false);
+      setEditingStore(null);
+      
+      // Reload stores
+      await loadStores();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update store');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -232,8 +315,8 @@ const StoreManagement: React.FC<StoreManagementProps> = ({ onViewStore }) => {
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-          {filteredStores.map((store) => {
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+        {filteredStores.map((store) => {
           const StatusIcon = statusConfig[store.status].icon;
           
           return (
@@ -270,20 +353,118 @@ const StoreManagement: React.FC<StoreManagementProps> = ({ onViewStore }) => {
                   </div>
                 </div>
 
-                <div className="mt-4 grid grid-cols-2 gap-4">
-                  <div className="bg-gray-50 rounded-lg p-3">
-                    <p className="text-xs text-gray-600">Revenue</p>
-                    <p className="font-semibold text-gray-900">₹{store.revenue.total.toLocaleString()}</p>
+                <div className="mt-4 grid grid-cols-3 gap-3">
+                  <div className="bg-blue-50 rounded-lg p-3">
+                    <div className="flex items-center space-x-2">
+                      <ShoppingCart className="w-4 h-4 text-blue-600" />
+                      <div>
+                        <p className="text-xs text-blue-600 font-medium">Orders</p>
+                        {storeAnalytics[store.id] ? (
+                          <>
+                            <p className="font-semibold text-blue-900 text-lg">
+                              {storeAnalytics[store.id].analytics?.orders?.total || 0}
+                            </p>
+                            <p className="text-xs text-blue-600">
+                              {storeAnalytics[store.id].analytics?.orders?.growth || '+0%'}
+                            </p>
+                          </>
+                        ) : (
+                          <div className="animate-pulse">
+                            <div className="h-6 bg-blue-200 rounded mb-1"></div>
+                            <div className="h-3 bg-blue-200 rounded w-12"></div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-3">
-                    <p className="text-xs text-gray-600">Commission</p>
-                    <p className="font-semibold text-gray-900">₹{store.commission.earned.toLocaleString()}</p>
+                  <div className="bg-emerald-50 rounded-lg p-3">
+                    <div className="flex items-center space-x-2">
+                      <DollarSign className="w-4 h-4 text-emerald-600" />
+                      <div>
+                        <p className="text-xs text-emerald-600 font-medium">Revenue</p>
+                        {storeAnalytics[store.id] ? (
+                          <>
+                            <p className="font-semibold text-emerald-900 text-lg">
+                              ₹{(storeAnalytics[store.id].analytics?.revenue?.total || 0).toLocaleString()}
+                            </p>
+                            <p className="text-xs text-emerald-600">
+                              {storeAnalytics[store.id].analytics?.revenue?.growth || '+0%'}
+                            </p>
+                          </>
+                        ) : (
+                          <div className="animate-pulse">
+                            <div className="h-6 bg-emerald-200 rounded mb-1"></div>
+                            <div className="h-3 bg-emerald-200 rounded w-12"></div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="bg-purple-50 rounded-lg p-3">
+                    <div className="flex items-center space-x-2">
+                      <TrendingUp className="w-4 h-4 text-purple-600" />
+                      <div>
+                        <p className="text-xs text-purple-600 font-medium">Commission</p>
+                        {storeAnalytics[store.id] ? (
+                          <>
+                            <p className="font-semibold text-purple-900 text-lg">
+                              ₹{(storeAnalytics[store.id].analytics?.commission?.total || 0).toLocaleString()}
+                            </p>
+                            <p className="text-xs text-purple-600">
+                              {storeAnalytics[store.id].analytics?.commission?.rate || store.commission.rate}%
+                            </p>
+                          </>
+                        ) : (
+                          <div className="animate-pulse">
+                            <div className="h-6 bg-purple-200 rounded mb-1"></div>
+                            <div className="h-3 bg-purple-200 rounded w-12"></div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
 
-                <div className="mt-4 flex items-center justify-between text-sm">
-                  <span className="text-gray-600">Last login: {store.lastLogin}</span>
-                  <span className="text-gray-600">{store.salesVolume.orders} orders</span>
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <div className="flex items-center space-x-2">
+                      <DollarSign className="w-4 h-4 text-gray-600" />
+                      <div>
+                        <p className="text-xs text-gray-600">Avg Order Value</p>
+                        {storeAnalytics[store.id] ? (
+                          <p className="font-semibold text-gray-900">
+                            ₹{(storeAnalytics[store.id].analytics?.orders?.averageValue || 0).toFixed(0)}
+                          </p>
+                        ) : (
+                          <div className="animate-pulse">
+                            <div className="h-6 bg-gray-200 rounded"></div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <div className="flex items-center space-x-2">
+                      <Users className="w-4 h-4 text-gray-600" />
+                      <div>
+                        <p className="text-xs text-gray-600">Customers</p>
+                        {storeAnalytics[store.id] ? (
+                          <p className="font-semibold text-gray-900">
+                            {storeAnalytics[store.id].analytics?.customers?.total || 0}
+                          </p>
+                        ) : (
+                          <div className="animate-pulse">
+                            <div className="h-6 bg-gray-200 rounded"></div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 flex items-center justify-between text-sm text-gray-600">
+                  <span>Last login: {store.lastLogin}</span>
+                  <span>Created: {new Date(store.createdDate).toLocaleDateString()}</span>
                 </div>
 
                 <div className="mt-4 flex space-x-2">
@@ -301,10 +482,14 @@ const StoreManagement: React.FC<StoreManagementProps> = ({ onViewStore }) => {
                     <Power className="w-4 h-4 text-gray-600" />
                   </button>
                   <button
-                    onClick={() => resetStoreAdmin(store.id)}
-                    className="p-2 rounded-lg border border-amber-200 text-amber-600 hover:bg-amber-50 transition-colors"
+                    onClick={() => {
+                      setEditingStore(store);
+                      setShowEditModal(true);
+                    }}
+                    className="p-2 rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 transition-colors"
+                    title="Edit Store"
                   >
-                    <RotateCcw className="w-4 h-4" />
+                    <Edit className="w-4 h-4" />
                   </button>
                   <button
                     onClick={() => {
@@ -320,7 +505,7 @@ const StoreManagement: React.FC<StoreManagementProps> = ({ onViewStore }) => {
             </div>
           );
         })}
-        </div>
+      </div>
       )}
 
       {/* Add Store Modal */}
@@ -399,6 +584,94 @@ const StoreManagement: React.FC<StoreManagementProps> = ({ onViewStore }) => {
                 className="flex-1 py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
               >
                 Create Store
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Store Modal */}
+      {showEditModal && editingStore && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md">
+            <h2 className="text-xl font-semibold text-gray-900 mb-4">Edit Store</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Store Name</label>
+                <input
+                  type="text"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  value={editingStore.name}
+                  onChange={(e) => setEditingStore({ ...editingStore, name: e.target.value })}
+                  placeholder="e.g., Ewa Luxe"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Subdomain</label>
+                <div className="flex">
+                  <input
+                    type="text"
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-l-lg focus:ring-2 focus:ring-blue-500"
+                    value={editingStore.subdomain}
+                    onChange={(e) => setEditingStore({ ...editingStore, subdomain: e.target.value.toLowerCase().replace(/[^a-z0-9]/g, '') })}
+                    placeholder="ewaluxe"
+                  />
+                  <span className="px-3 py-2 bg-gray-100 border border-l-0 border-gray-300 rounded-r-lg text-sm text-gray-600">
+                    .store.com
+                  </span>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Admin Name</label>
+                <input
+                  type="text"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  value={editingStore.adminName}
+                  onChange={(e) => setEditingStore({ ...editingStore, adminName: e.target.value })}
+                  placeholder="Ewa Admin"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Admin Email</label>
+                <input
+                  type="email"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  placeholder="ewa@admin.com"
+                  value={editingStore.adminEmail}
+                  onChange={(e) => setEditingStore({ ...editingStore, adminEmail: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Commission Rate (%)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="100"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  value={editingStore.commission.rate}
+                  onChange={(e) => setEditingStore({ 
+                    ...editingStore, 
+                    commission: { ...editingStore.commission, rate: parseFloat(e.target.value) }
+                  })}
+                />
+              </div>
+            </div>
+            <div className="flex space-x-3 mt-6">
+              <button
+                onClick={() => {
+                  setShowEditModal(false);
+                  setEditingStore(null);
+                }}
+                className="flex-1 py-2 px-4 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleEditStore}
+                className="flex-1 py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                Update Store
               </button>
             </div>
           </div>
