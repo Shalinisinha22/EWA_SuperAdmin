@@ -12,6 +12,11 @@ export interface Store {
     language: string;
     commissionRate: number;
   };
+  admin?: {
+    email: string;
+    name: string;
+    status: string;
+  };
   createdAt: string;
   updatedAt: string;
 }

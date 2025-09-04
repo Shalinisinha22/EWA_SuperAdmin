@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { 
   Plus, 
   Search, 
-  MoreVertical, 
   Edit, 
   Trash2, 
   Store,
@@ -12,7 +11,6 @@ import {
   CheckCircle,
   XCircle,
   Clock,
-  RotateCcw,
   Eye,
   Power,
   AlertCircle,
@@ -22,7 +20,7 @@ import {
   Users
 } from 'lucide-react';
 import { Store as StoreType } from '../types/store';
-import { storeAPI, Store as APIStore, CreateStoreData } from '../services/storeAPI';
+import { storeAPI, CreateStoreData } from '../services/storeAPI';
 import { storeAnalyticsAPI } from '../services/storeAnalyticsAPI';
 import { useAuth } from '../context/AuthContext';
 
@@ -79,14 +77,14 @@ const StoreManagement: React.FC<StoreManagementProps> = ({ onViewStore }) => {
         id: store._id,
         name: store.name,
         subdomain: store.slug,
-        adminName: 'Store Admin', // Will be updated when we get admin details
-        adminEmail: 'admin@store.com', // Will be updated when we get admin details
+        adminName: store?.admin?.name || 'Unknown Admin',
+        adminEmail: store?.admin?.email || 'admin@store.com',
         status: store.status,
-        revenue: { total: 0, monthly: 0, weekly: 0 }, // Mock data for now
-        salesVolume: { orders: 0, aov: 0, products: 0 }, // Mock data for now
-        commission: { rate: store.settings.commissionRate, earned: 0 }, // Mock data for now
+        revenue: { total: 0, monthly: 0, weekly: 0 }, // Will be updated with analytics
+        salesVolume: { orders: 0, aov: 0, products: 0 }, // Will be updated with analytics
+        commission: { rate: store.settings.commissionRate, earned: 0 }, // Will be updated with analytics
         createdDate: new Date(store.createdAt).toISOString().split('T')[0],
-        lastLogin: 'Never', // Mock data for now
+        lastLogin: 'Never', // Will be updated with real data when available
         activityLogs: []
       }));
       
@@ -98,20 +96,6 @@ const StoreManagement: React.FC<StoreManagementProps> = ({ onViewStore }) => {
     }
   };
 
-  // Load analytics data for a specific store
-  const loadStoreAnalytics = async (storeId: string) => {
-    if (!user?.token) return;
-    
-    try {
-      const analytics = await storeAnalyticsAPI.getStoreOverview(user.token, storeId, '30d');
-      setStoreAnalytics(prev => ({
-        ...prev,
-        [storeId]: analytics
-      }));
-    } catch (err) {
-      console.error(`Failed to load analytics for store ${storeId}:`, err);
-    }
-  };
 
   // Load analytics for all stores
   const loadAllStoreAnalytics = async () => {
@@ -156,6 +140,7 @@ const StoreManagement: React.FC<StoreManagementProps> = ({ onViewStore }) => {
   const filteredStores = stores.filter(store => {
     const matchesSearch = store.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          store.adminName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         store.adminEmail.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          store.subdomain.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === 'all' || store.status === statusFilter;
     return matchesSearch && matchesStatus;
@@ -216,19 +201,6 @@ const StoreManagement: React.FC<StoreManagementProps> = ({ onViewStore }) => {
     }
   };
 
-  const resetStoreAdmin = async (id: string) => {
-    if (!user?.token) return;
-    
-    try {
-      const store = stores.find(s => s.id === id);
-      if (!store) return;
-
-      const response = await storeAPI.resetAdminPassword(user.token, id, store.adminEmail);
-      alert(`Password reset successfully. New password: ₹{response.newPassword}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to reset password');
-    }
-  };
 
   const handleEditStore = async () => {
     if (!user?.token || !editingStore) return;
@@ -287,7 +259,7 @@ const StoreManagement: React.FC<StoreManagementProps> = ({ onViewStore }) => {
             <Search className="w-5 h-5 absolute left-3 top-3 text-gray-400" />
             <input
               type="text"
-              placeholder="Search stores by name, admin, or subdomain..."
+              placeholder="Search stores by name, admin name, admin email, or subdomain..."
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}

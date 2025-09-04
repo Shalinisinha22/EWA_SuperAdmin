@@ -16,6 +16,7 @@ import {
 import { storeAPI } from '../services/storeAPI';
 import { storeAnalyticsAPI } from '../services/storeAnalyticsAPI';
 import { useAuth } from '../context/AuthContext';
+import { testConnectivity } from '../utils/apiClient';
 
 const GlobalOverview: React.FC = () => {
   const { user } = useAuth();
@@ -34,14 +35,22 @@ const GlobalOverview: React.FC = () => {
 
   // Load global statistics
   const loadGlobalStats = async () => {
-    if (!user?.token) return;
+    if (!user?.token) {
+      console.error('No user token available');
+      setError('No authentication token found. Please log in again.');
+      setLoading(false);
+      return;
+    }
     
     try {
       setLoading(true);
       setError('');
       
+      console.log('Loading global stats with token:', user.token.substring(0, 20) + '...');
+      
       // Get all stores
       const storesResponse = await storeAPI.getAllStores(user.token, 1, 1000);
+      console.log('Stores response:', storesResponse);
       const stores = storesResponse.stores;
       
       // Calculate store statistics
@@ -106,7 +115,9 @@ const GlobalOverview: React.FC = () => {
       setRecentActivity(activity);
       
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load global statistics');
+      console.error('Error loading global stats:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load global statistics';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -176,16 +187,37 @@ const GlobalOverview: React.FC = () => {
   if (error) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
+        <div className="text-center max-w-md">
           <div className="text-red-600 text-6xl mb-4">⚠️</div>
           <h1 className="text-2xl font-bold text-gray-900 mb-2">Error Loading Overview</h1>
           <p className="text-gray-600 mb-4">{error}</p>
-          <button
-            onClick={loadGlobalStats}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            Retry
-          </button>
+          <div className="text-sm text-gray-500 mb-4">
+            <p>Common solutions:</p>
+            <ul className="text-left mt-2 space-y-1">
+              <li>• Make sure the backend server is running on port 5000</li>
+              <li>• Check if you're logged in with a valid token</li>
+              <li>• Verify your internet connection</li>
+              <li>• Check the browser console for more details</li>
+            </ul>
+          </div>
+          <div className="flex space-x-3">
+            <button
+              onClick={loadGlobalStats}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              Retry
+            </button>
+            <button
+              onClick={() => {
+                console.log('User token:', user?.token);
+                console.log('API Base URL:', 'http://localhost:5000/api');
+                console.log('Current user:', user);
+              }}
+              className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+            >
+              Debug Info
+            </button>
+          </div>
         </div>
       </div>
     );
